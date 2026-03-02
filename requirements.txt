@@ -1,0 +1,3 @@
+ntscraper
+deep-translator
+yagmail
