@@ -2,6 +2,7 @@
 """
 Twitter 推文收集 - 使用 RSSHub API
 不需要 Twitter API，通过 RSSHub 获取数据
+只收集最近一小时的推文
 """
 
 import os
@@ -33,6 +34,12 @@ def get_tweets():
     """通过 RSSHub API 获取推文"""
     all_tweets = []
     
+    # 当前时间（北京时间）
+    now_beijing = datetime.now()
+    one_hour_ago = now_beijing - timedelta(hours=1)
+    
+    print(f"筛选最近一小时的推文: {one_hour_ago.strftime('%H:%M')} - {now_beijing.strftime('%H:%M')} 北京时间")
+    
     for username in TWITTER_ACCOUNTS:
         print(f"\n获取 @{username}...")
         
@@ -46,11 +53,21 @@ def get_tweets():
                 data = resp.json()
                 tweets = data.get('tweets', [])
                 for t in tweets[:10]:
-                    all_tweets.append({
-                        'username': username,
-                        'time': t.get('created_at', datetime.now().isoformat()),
-                        'original': t.get('text', '')
-                    })
+                    created_at = t.get('created_at', '')
+                    tweet_time = None
+                    if created_at:
+                        try:
+                            tweet_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            tweet_time = tweet_time + timedelta(hours=8)
+                        except:
+                            pass
+                    
+                    if tweet_time and tweet_time >= one_hour_ago:
+                        all_tweets.append({
+                            'username': username,
+                            'time': tweet_time.strftime("%Y-%m-%d %H:%M:%S"),
+                            'original': t.get('text', '')
+                        })
                 print(f"  成功获取 {len(tweets)} 条")
                 continue
         except Exception as e:
@@ -62,9 +79,7 @@ def get_tweets():
                 url = f"https://{nitter_instance}/{username}/rss"
                 print(f"  尝试: {url}")
                 
-                resp = requests.get(url, timeout=10, headers={
-                    'User-Agent': 'Mozilla/5.0'
-                })
+                resp = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
                 if resp.status_code == 200:
                     import xml.etree.ElementTree as ET
                     root = ET.fromstring(resp.content)
@@ -79,22 +94,25 @@ def get_tweets():
                         if desc is not None and desc.text:
                             text = desc.text
                         
-                        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        tweet_time = None
                         if pub is not None and pub.text:
                             try:
                                 from email.utils import parsedate_to_datetime
                                 dt = parsedate_to_datetime(pub.text)
-                                time_str = (dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+                                beijing_time = dt + timedelta(hours=8)
+                                tweet_time = beijing_time
+                                time_str = beijing_time.strftime("%Y-%m-%d %H:%M:%S")
                             except:
                                 pass
                         
-                        if text:
+                        if text and tweet_time:
                             text = re.sub(r'<[^>]+>', '', text)
-                            all_tweets.append({
-                                'username': username,
-                                'time': time_str,
-                                'original': text.strip()
-                            })
+                            if tweet_time >= one_hour_ago:
+                                all_tweets.append({
+                                    'username': username,
+                                    'time': time_str,
+                                    'original': text.strip()
+                                })
                     
                     print(f"  从 {nitter_instance} 获取 {len(items)} 条")
                     break
@@ -127,10 +145,14 @@ def main():
     print("开始收集推文...")
     print("=" * 50)
     
-    all_tweets = get_tweets()
-    print(f"\n共收集 {len(all_tweets)} 条推文")
+    now_beijing = datetime.now()
+    one_hour_ago = now_beijing - timedelta(hours=1)
+    time_range = f"{one_hour_ago.strftime('%H:%M')} - {now_beijing.strftime('%H:%M')}"
     
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    all_tweets = get_tweets()
+    print(f"\n最近一小时 ({time_range}) 共收集 {len(all_tweets)} 条推文")
+    
+    now_str = now_beijing.strftime("%Y-%m-%d %H:%M:%S")
     
     if all_tweets:
         all_tweets.sort(key=lambda x: x['time'], reverse=True)
@@ -141,14 +163,14 @@ def main():
                 subject = t['original'][:20]
                 break
         
-        html = f"<h2>Twitter 推文汇总</h2><p>时间: {now_str} 北京时间</p><p>数量: {len(all_tweets)}</p><hr>"
+        html = f"<h2>Twitter 推文汇总</h2><p>收集时间: {now_str} 北京时间</p><p>时间范围: {time_range} 北京时间</p><p>推文数量: {len(all_tweets)} 条</p><hr>"
         
         for t in all_tweets:
             trans = translate_text(t['original'])
             html += f"<div><p><strong>@{t['username']}</strong> · {t['time']}</p><p>{t['original']}</p><p>翻译: {trans}</p></div><hr>"
     else:
-        subject = "Twitter 推文汇总 - 测试"
-        html = f"<h2>Twitter 推文汇总</h2><p>时间: {now_str}</p><p>未能获取推文，这是测试邮件。</p>"
+        subject = "Twitter 推文汇总"
+        html = f"<h2>Twitter 推文汇总</h2><p>收集时间: {now_str} 北京时间</p><p>时间范围: {time_range} 北京时间</p><p>最近一小时没有新推文。</p>"
     
     send_email(subject, html)
     print("\n完成！")
