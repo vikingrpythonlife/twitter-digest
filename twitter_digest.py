@@ -12,8 +12,8 @@ from datetime import datetime, timedelta
 from deep_translator import GoogleTranslator
 import yagmail
 
-SENDER_EMAIL = os.environ.get('SENDER_EMAIL', '466919954@qq.com')
-SENDER_PASSWORD = os.environ.get('SENDER_PASSWORD', 'dxgmlsritzwacbcf')
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL')
+SENDER_PASSWORD = os.environ.get('SENDER_PASSWORD')
 RECEIVER_EMAIL = os.environ.get('RECEIVER_EMAIL', '466919954@qq.com')
 
 TWITTER_ACCOUNTS = ["fxtrader", "Osint613", "ChineseWSJ"]
@@ -141,6 +141,11 @@ def send_email(subject, content):
 
 
 def main():
+    # 验证必要的环境变量
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        print("错误: 请设置 SENDER_EMAIL 和 SENDER_PASSWORD 环境变量")
+        return
+    
     print("=" * 50)
     print("开始收集推文...")
     print("=" * 50)
