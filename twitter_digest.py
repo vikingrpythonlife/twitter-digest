@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Twitter 推文收集 - 使用 Fxtwitter/Nitter API
+Twitter 推文收集 - 使用 ntscraper
 只收集最近一小时的推文
 """
 
 import os
-import re
-import json
-import requests
 from datetime import datetime, timedelta
+from ntscraper import Nitter
 from deep_translator import GoogleTranslator
 import yagmail
 
@@ -17,6 +15,9 @@ SENDER_PASSWORD = os.environ.get('SENDER_PASSWORD')
 RECEIVER_EMAIL = os.environ.get('RECEIVER_EMAIL', '466919954@qq.com')
 
 TWITTER_ACCOUNTS = ["fxtrader", "Osint613", "ChineseWSJ"]
+
+# 初始化 Nitter scraper
+scraper = Nitter(log_level=0)
 
 
 def translate_text(text):
@@ -47,102 +48,51 @@ def get_tweets():
     for username in TWITTER_ACCOUNTS:
         print(f"\n获取 @{username}...")
         
-        # 方法1: 尝试 fxtwitter.com (vxtwitter的替代)
         try:
-            url = f"https://api.fxtwitter.com/v1/user/{username}?count=20"
-            print(f"  尝试: {url}")
+            # 使用 ntscraper 获取推文
+            tweets = scraper.get_tweets(names=[username], number=10)
             
-            resp = requests.get(url, timeout=15, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            })
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                # 解析fxtwitter响应结构
-                user_data = data.get('user', {}).get('result', {}) if 'user' in data else data
-                tweets_data = user_data.get('timeline', {}).get('timeline', {}).get('instructions', [])
+            if tweets and 'tweets' in tweets:
+                user_tweets = tweets.get('tweets', [])
                 
-                for instruction in tweets_data:
-                    entries = instruction.get('entries', [])
-                    for entry in entries:
-                        content = entry.get('content', {})
-                        item = content.get('item', {})
-                        tweet_data = item.get('itemContent', {})
-                        
-                        # 尝试多种结构
-                        if not tweet_data:
-                            tweet_data = entry.get('content', {})
-                        
-                        tweet_results = tweet_data.get('tweet_results', {})
-                        result = tweet_results.get('result', {})
-                        
-                        if result:
-                            legacy = result.get('legacy', {})
-                            created_at_str = legacy.get('created_at', '')
-                            
-                            if created_at_str:
-                                tweet_time = datetime.strptime(created_at_str, '%a %b %d %H:%M:%S +0000 %Y')
-                                tweet_time = tweet_time + timedelta(hours=8)  # 转换为北京时间
-                                
-                                if tweet_time >= one_hour_ago:
-                                    text = legacy.get('full_text', '')
-                                    all_tweets.append({
-                                        'username': username,
-                                        'time': tweet_time.strftime("%Y-%m-%d %H:%M:%S"),
-                                        'original': text
-                                    })
+                for tweet in user_tweets:
+                    # 获取推文时间和内容
+                    tweet_time = tweet.get('date')
+                    text = tweet.get('text', '')
+                    
+                    if not tweet_time or not text:
+                        continue
+                    
+                    # 解析时间
+                    try:
+                        # 尝试解析多种时间格式
+                        if 'T' in tweet_time:
+                            tweet_datetime = datetime.strptime(tweet_time[:19], '%Y-%m-%dT%H:%M:%S')
+                            tweet_datetime = tweet_datetime + timedelta(hours=8)
+                        else:
+                            # 尝试其他格式
+                            tweet_datetime = datetime.strptime(tweet_time, '%Y-%m-%d %H:%M:%S')
+                            tweet_datetime = tweet_datetime + timedelta(hours=8)
+                    except:
+                        # 如果解析失败，使用当前时间减去一个估计值
+                        tweet_datetime = now_beijing - timedelta(minutes=30)
+                    
+                    # 只保留最近一小时的推文
+                    if tweet_datetime >= one_hour_ago:
+                        all_tweets.append({
+                            'username': username,
+                            'time': tweet_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+                            'original': text
+                        })
+                        print(f"  获取到推文: {text[:30]}...")
                 
-                print(f"  fxtwitter 成功获取数据")
+                print(f"  成功获取 {len(user_tweets)} 条推文")
                 continue
+                
         except Exception as e:
-            print(f"  fxtwitter 失败: {e}")
+            print(f"  ntscraper 失败: {e}")
         
-        # 方法2: 尝试 Nitter 实例
-        nitter_instances = ['nitter.net', 'nitter.privacydev.net', 'nitter.poast.org']
-        for nitter_instance in nitter_instances:
-            try:
-                url = f"https://{nitter_instance}/{username}"
-                print(f"  尝试: {url}")
-                
-                resp = requests.get(url, timeout=10, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                })
-                
-                if resp.status_code == 200:
-                    # 解析HTML获取推文
-                    html = resp.text
-                    
-                    # 查找推文时间
-                    time_pattern = r'datetime="([^"]+)"'
-                    content_pattern = r'class="tweet-content[^>]*>([^<]+)'
-                    
-                    import re
-                    times = re.findall(time_pattern, html)
-                    contents = re.findall(content_pattern, html)
-                    
-                    for i, (t_str, content) in enumerate(zip(times[:10], contents[:10])):
-                        try:
-                            tweet_time = datetime.fromisoformat(t_str.replace('Z', '+00:00'))
-                            tweet_time = tweet_time + timedelta(hours=8)
-                            
-                            if tweet_time >= one_hour_ago:
-                                all_tweets.append({
-                                    'username': username,
-                                    'time': tweet_time.strftime("%Y-%m-%d %H:%M:%S"),
-                                    'original': content.strip()
-                                })
-                        except:
-                            pass
-                    
-                    if all_tweets:
-                        print(f"  从 {nitter_instance} 获取 {len(all_tweets)} 条")
-                        break
-            except Exception as e:
-                print(f"  {nitter_instance} 失败: {e}")
-                continue
-        
-        else:
-            print(f"  所有方法都失败")
+        print(f"  无法获取 @{username} 的推文")
     
     return all_tweets
 
@@ -177,6 +127,7 @@ def main():
     time_range = f"{one_hour_ago.strftime('%H:%M')} - {now_beijing.strftime('%H:%M')}"
     
     all_tweets = get_tweets()
+    
     print(f"\n最近一小时 ({time_range}) 共收集 {len(all_tweets)} 条推文")
     
     now_str = now_beijing.strftime("%Y-%m-%d %H:%M:%S")
