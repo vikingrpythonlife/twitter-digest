@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Twitter 推文收集 - 使用 ntscraper (调试版本)
+Twitter 推文收集 - 使用 ntscraper (修复版本)
 """
 
 import os
@@ -10,7 +10,6 @@ from ntscraper import Nitter
 from deep_translator import GoogleTranslator
 import yagmail
 
-# 打印 Python 版本和所有导入的模块
 print(f"Python版本: {sys.version}")
 
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL')
@@ -52,29 +51,31 @@ def get_tweets():
         print(f"开始获取 @{username} 的推文...")
         
         try:
+            # 修复：使用正确的 API 参数
             print(f"调用 ntscraper.get_tweets()...")
-            tweets = scraper.get_tweets(names=[username], number=10)
+            tweets = scraper.get_tweets(usernames=[username], mode='user')
             
             print(f"原始返回: {type(tweets)}")
-            print(f"返回数据: {tweets}")
             
             if not tweets:
                 print(f"  返回为空")
                 continue
-                
-            if 'tweets' not in tweets:
-                print(f"  返回结构中没有 'tweets' 键")
-                print(f"  全部keys: {tweets.keys() if hasattr(tweets, 'keys') else 'N/A'}")
+            
+            # 新版本返回结构不同
+            if 'tweets' in tweets:
+                user_tweets = tweets.get('tweets', [])
+            else:
+                # 尝试其他键
+                print(f"  返回keys: {tweets.keys() if hasattr(tweets, 'keys') else tweets}")
                 continue
-                
-            user_tweets = tweets.get('tweets', [])
+            
             print(f"获取到 {len(user_tweets)} 条推文")
             
             for i, tweet in enumerate(user_tweets):
                 print(f"\n--- 推文 {i+1} ---")
-                print(f"原始数据: {tweet}")
                 
-                tweet_time = tweet.get('date')
+                # 新版本字段可能不同
+                tweet_time = tweet.get('date') or tweet.get('created_at')
                 text = tweet.get('text', '')
                 
                 print(f"时间字段: {tweet_time}")
@@ -98,8 +99,6 @@ def get_tweets():
                     tweet_datetime = now_beijing - timedelta(minutes=5)
                 
                 print(f"解析后时间: {tweet_datetime}")
-                print(f"截止时间: {one_hour_ago}")
-                print(f"是否在范围内: {tweet_datetime >= one_hour_ago if tweet_datetime else 'N/A'}")
                 
                 if tweet_datetime and tweet_datetime >= one_hour_ago:
                     all_tweets.append({
@@ -145,7 +144,7 @@ def main():
         return
     
     print("=" * 50)
-    print("开始收集推文 (调试模式)...")
+    print("开始收集推文...")
     print("=" * 50)
     
     now_beijing = datetime.now()
