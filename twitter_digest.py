@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Twitter 推文收集 - 使用 ntscraper (修复版本)
+Twitter 推文收集 - 使用 ntscraper (最终修复版)
 """
 
 import os
@@ -51,9 +51,10 @@ def get_tweets():
         print(f"开始获取 @{username} 的推文...")
         
         try:
-            # 修复：使用正确的 API 参数
+            # 修复：使用位置参数，不是关键字参数
+            # 正确: scraper.get_tweets("username", mode='user', number=10)
             print(f"调用 ntscraper.get_tweets()...")
-            tweets = scraper.get_tweets(usernames=[username], mode='user')
+            tweets = scraper.get_tweets(username, mode='user', number=10)
             
             print(f"原始返回: {type(tweets)}")
             
@@ -61,11 +62,10 @@ def get_tweets():
                 print(f"  返回为空")
                 continue
             
-            # 新版本返回结构不同
+            # 获取推文列表
             if 'tweets' in tweets:
                 user_tweets = tweets.get('tweets', [])
             else:
-                # 尝试其他键
                 print(f"  返回keys: {tweets.keys() if hasattr(tweets, 'keys') else tweets}")
                 continue
             
@@ -74,7 +74,7 @@ def get_tweets():
             for i, tweet in enumerate(user_tweets):
                 print(f"\n--- 推文 {i+1} ---")
                 
-                # 新版本字段可能不同
+                # 获取时间和内容
                 tweet_time = tweet.get('date') or tweet.get('created_at')
                 text = tweet.get('text', '')
                 
